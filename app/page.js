@@ -433,6 +433,12 @@ export default function Home() {
           <button className="cta-big">Adquirir Acesso</button>
         </div>
 
+        <div style={{ textAlign: 'center', paddingBottom: '2rem', color: '#d9c99d', fontSize: '.82rem', lineHeight: 1.9, letterSpacing: '.06em' }}>
+          <div style={{ fontWeight: 600, marginBottom: '.15rem' }}>Carlos Eduardo Xavier Junior</div>
+          <div style={{ color: '#bca86d', textTransform: 'uppercase', letterSpacing: '.2em', fontSize: '.68rem' }}>K&apos;du PROD</div>
+          <div style={{ marginTop: '.4rem', color: '#a09880' }}>Belo Horizonte - Brasil</div>
+        </div>
+
       </section>
     </main>
   )
