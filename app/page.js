@@ -1,9 +1,14 @@
 'use client'
+import { createClient } from '@supabase/supabase-js'
 import { useEffect, useRef, useState } from 'react'
 
 export default function Home() {
   const canvasRef = useRef(null)
+  const audioRef = useRef(null)
   const [audioStarted, setAudioStarted] = useState(false)
+  const [interestOpen, setInterestOpen] = useState(false)
+  const [leadForm, setLeadForm] = useState({ nome: '', whatsapp: '' })
+  const [leadStatus, setLeadStatus] = useState('')
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -97,16 +102,94 @@ export default function Home() {
   }, [])
 
   const startAudio = () => {
-    if (audioStarted) return
-    const ac = new AudioContext()
+    const audioState = audioRef.current
+
+    if (audioStarted && audioState) {
+      try {
+        audioState.gain.gain.cancelScheduledValues(audioState.context.currentTime)
+        audioState.gain.gain.setValueAtTime(audioState.gain.gain.value, audioState.context.currentTime)
+        audioState.gain.gain.exponentialRampToValueAtTime(0.0001, audioState.context.currentTime + 0.2)
+        audioState.osc.stop(audioState.context.currentTime + 0.2)
+      } catch (err) {
+        console.warn('Erro ao parar frequência 432Hz:', err)
+      }
+      setAudioStarted(false)
+      audioRef.current = null
+      return
+    }
+
+    const ac = new (window.AudioContext || window.webkitAudioContext)()
     const osc = ac.createOscillator()
     const gain = ac.createGain()
-    osc.connect(gain); gain.connect(ac.destination)
+
+    osc.connect(gain)
+    gain.connect(ac.destination)
     osc.frequency.setValueAtTime(432, ac.currentTime)
     osc.type = 'sine'
-    gain.gain.setValueAtTime(0, ac.currentTime)
-    gain.gain.linearRampToValueAtTime(0.05, ac.currentTime + 2)
-    osc.start(); setAudioStarted(true)
+    gain.gain.setValueAtTime(0.0001, ac.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.04, ac.currentTime + 1.2)
+
+    osc.start()
+    audioRef.current = { context: ac, osc, gain }
+    setAudioStarted(true)
+  }
+
+  const persistLead = async (payload) => {
+    const record = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`,
+      ...payload,
+      created_at: new Date().toISOString(),
+    }
+
+    const stored = JSON.parse(localStorage.getItem('cosmologia_harmonica_leads') || '[]')
+    stored.push(record)
+    localStorage.setItem('cosmologia_harmonica_leads', JSON.stringify(stored))
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const supabase = createClient(supabaseUrl, supabaseKey)
+        await supabase.from('interesses').insert([
+          {
+            id: record.id,
+            nome: payload.nome,
+            whatsapp: payload.whatsapp,
+            created_at: record.created_at,
+          },
+        ])
+      } catch (error) {
+        console.warn('Supabase indisponível, dado salvo localmente:', error)
+      }
+    }
+  }
+
+  const handleLeadSubmit = async (event) => {
+    event.preventDefault()
+
+    if (!leadForm.nome.trim() || !leadForm.whatsapp.trim()) {
+      setLeadStatus('Preencha nome e WhatsApp.')
+      return
+    }
+
+    setLeadStatus('Registrando seu desejo...')
+
+    try {
+      await persistLead({
+        nome: leadForm.nome.trim(),
+        whatsapp: leadForm.whatsapp.trim(),
+      })
+      setLeadStatus('Seu desejo foi registrado. O universo vai responder.')
+      setLeadForm({ nome: '', whatsapp: '' })
+      setTimeout(() => {
+        setInterestOpen(false)
+        setLeadStatus('')
+      }, 1800)
+    } catch (error) {
+      console.error('Erro ao registrar interesse:', error)
+      setLeadStatus('Houve um erro ao registrar seu desejo, mas o universo continua ouvindo.')
+    }
   }
 
   const domains = [
@@ -125,22 +208,22 @@ export default function Home() {
       title: 'Cosmologia Harmônica', label: 'Conhecimento Estruturado',
       desc: 'Conteúdo organizado como um livro — partes, capítulos e sumários que integram história, ciência, espiritualidade e arte.',
       obj: 'Fornecer o mapa conceitual e o contexto da jornada.',
-      tags: ['Livro Digital', 'Capítulos', 'Sumários'], href: null },
+      tags: ['Livro Digital', 'Capítulos', 'Sumários'], href: null, soon: false },
     { num: '02', icon: '🔭', color: '#a855f7', glow: 'glow-purple',
       title: 'Explorador de Escalas e Espectros', label: 'Visualização e Compreensão',
       desc: 'Régua universal logarítmica do comprimento de Planck (10⁻³⁵m) ao universo observável (10²⁷m). Espectros eletromagnético e acústico.',
       obj: 'Mostrar que padrões semelhantes se repetem em todas as escalas.',
-      tags: ['Escala Cósmica', 'Espectro EM', 'Espectro Acústico'], href: '/sentidos.html' },
+      tags: ['Escala Cósmica', 'Espectro EM', 'Espectro Acústico'], href: null, soon: true },
     { num: '03', icon: '🎵', color: '#10b981', glow: 'glow-green',
       title: 'Sintonizador Harmônico', label: 'Experiência Sonora e Afinação',
       desc: 'Explore 12-TET, Just Intonation, 3-6-9 e Ressonância de Schumann. Ouça como diferentes afinações afetam a percepção.',
       obj: 'Ouvir e sentir como diferentes afinações afetam a coerência.',
-      tags: ['432 Hz', 'Just Intonation', 'Schumann', '3-6-9'], href: null },
+      tags: ['432 Hz', 'Just Intonation', 'Schumann', '3-6-9'], href: null, soon: true },
     { num: '04', icon: '🎛️', color: '#06b6d4', glow: 'glow-cyan',
       title: 'Sintonizador Multidimensional Pro', label: 'Cimática 3D e Análise Avançada',
       desc: 'Visualização 3D de padrões cimáticos em tempo real. MIDI, ADSR, análise de espectro — som, luz, forma e movimento integrados.',
       obj: 'Ver a matéria respondendo ao som, revelando a geometria da vibração.',
-      tags: ['Cimática 3D', 'MIDI', 'ADSR', 'Espectro'], href: '/sintonizador.html' },
+      tags: ['Cimática 3D', 'MIDI', 'ADSR', 'Espectro'], href: null, soon: true },
   ]
 
   const journey = [
@@ -378,17 +461,19 @@ export default function Home() {
                 <p style={{ color: tool.color, fontSize: '.7rem', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: '1rem' }}>{tool.label}</p>
                 <p style={{ color: '#a09880', fontSize: '.88rem', lineHeight: 1.8, marginBottom: '1rem' }}>{tool.desc}</p>
                 <p style={{ color: '#4a4535', fontSize: '.76rem', fontStyle: 'italic', lineHeight: 1.6, marginBottom: '1.25rem' }}>Objetivo: {tool.obj}</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem', marginBottom: tool.href ? '1.2rem' : 0 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem', marginBottom: tool.href || tool.soon ? '1.2rem' : 0 }}>
                   {tool.tags.map(t => (
                     <span key={t} style={{ background: `${tool.color}12`, border: `1px solid ${tool.color}28`, color: tool.color, padding: '.2rem .65rem', borderRadius: '20px', fontSize: '.68rem' }}>{t}</span>
                   ))}
                 </div>
-                {tool.href && <div style={{ color: tool.color, fontSize: '.82rem', letterSpacing: '.1em' }}>Abrir ferramenta →</div>}
+                {tool.soon ? (
+                  <div style={{ color: tool.color, fontSize: '.82rem', letterSpacing: '.08em' }}>(em breve...)</div>
+                ) : tool.href ? (
+                  <div style={{ color: tool.color, fontSize: '.82rem', letterSpacing: '.1em' }}>Abrir ferramenta →</div>
+                ) : null}
               </div>
             )
-            return tool.href
-              ? <a key={tool.num} href={tool.href} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'block' }}>{inner}</a>
-              : <div key={tool.num}>{inner}</div>
+            return tool.soon ? <div key={tool.num}>{inner}</div> : <a key={tool.num} href={tool.href} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'block' }}>{inner}</a>
           })}
         </div>
 
@@ -430,7 +515,7 @@ export default function Home() {
           <p style={{ color: '#4a4535', fontSize: '.82rem', marginBottom: '2.5rem', letterSpacing: '.05em' }}>
             Grimório completo&nbsp;·&nbsp;DropPlayer Pro&nbsp;·&nbsp;Biblioteca digital&nbsp;·&nbsp;4 ferramentas interativas
           </p>
-          <button className="cta-big">Adquirir Acesso</button>
+          <button className="cta-big" onClick={() => setInterestOpen(true)}>Adquirir Acesso</button>
         </div>
 
         <div style={{ textAlign: 'center', paddingBottom: '2rem', color: '#d9c99d', fontSize: '.82rem', lineHeight: 1.9, letterSpacing: '.06em' }}>
@@ -440,6 +525,93 @@ export default function Home() {
         </div>
 
       </section>
+
+      {interestOpen && (
+        <div
+          onClick={() => setInterestOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2,2,8,0.82)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 50,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '520px',
+              background: 'rgba(12,12,18,0.96)',
+              border: '1px solid rgba(201,168,76,0.35)',
+              borderRadius: '18px',
+              boxShadow: '0 20px 80px rgba(0,0,0,0.5)',
+              padding: '2rem 1.5rem',
+              color: '#f3e8c4',
+            }}
+          >
+            <p style={{ color: '#c9a84c', letterSpacing: '.12em', fontSize: '.72rem', textTransform: 'uppercase', marginBottom: '1rem' }}>
+              Desejo cósmico
+            </p>
+            <p style={{ color: '#e8e0d0', fontSize: '1rem', lineHeight: 1.8, marginBottom: '1.5rem' }}>
+              Este universo ainda está em desenvolvimento, mas seu desejo será atendido. Informe seu nome e WhatsApp e deixe que o universo <em style={{ fontStyle: 'italic', color: '#f5d77a' }}>fluxcir</em>.
+            </p>
+
+            <form onSubmit={handleLeadSubmit} style={{ display: 'grid', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '.75rem', letterSpacing: '.12em', textTransform: 'uppercase', color: '#bca86d', marginBottom: '.45rem' }}>
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={leadForm.nome}
+                  onChange={(event) => setLeadForm((prev) => ({ ...prev, nome: event.target.value }))}
+                  placeholder="Seu nome"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '.9rem .9rem', borderRadius: '10px', border: '1px solid rgba(201,168,76,0.35)', background: 'rgba(255,255,255,0.02)', color: '#f3e8c4', fontSize: '1rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '.75rem', letterSpacing: '.12em', textTransform: 'uppercase', color: '#bca86d', marginBottom: '.45rem' }}>
+                  WhatsApp
+                </label>
+                <input
+                  type="tel"
+                  value={leadForm.whatsapp}
+                  onChange={(event) => setLeadForm((prev) => ({ ...prev, whatsapp: event.target.value }))}
+                  placeholder="(99) 99999-9999"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '.9rem .9rem', borderRadius: '10px', border: '1px solid rgba(201,168,76,0.35)', background: 'rgba(255,255,255,0.02)', color: '#f3e8c4', fontSize: '1rem' }}
+                />
+              </div>
+
+              {leadStatus && (
+                <div style={{ color: leadStatus.includes('erro') || leadStatus.includes('Preencha') ? '#ffb1a6' : '#d7c889', fontSize: '.83rem', lineHeight: 1.6 }}>
+                  {leadStatus}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end', marginTop: '.25rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setInterestOpen(false)}
+                  style={{ background: 'transparent', border: '1px solid rgba(201,168,76,0.4)', color: '#d9c99d', padding: '.8rem 1.1rem', borderRadius: '10px', cursor: 'pointer' }}
+                >
+                  Fechar
+                </button>
+                <button
+                  type="submit"
+                  style={{ background: '#c9a84c', color: '#0a0c10', border: 'none', padding: '.8rem 1.3rem', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  Enviar desejo
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
